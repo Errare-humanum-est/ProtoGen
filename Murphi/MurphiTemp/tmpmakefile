@@ -15,4 +15,4 @@ ${TARGET}.cpp: ${TARGET}.m
 
 .PHONY: clean
 clean:
-	-rm ${TARGET} *.cpp
+	-rm -i ${TARGET} SSP_${TARGET} *.cpp *.m *.txt

@@ -61,7 +61,6 @@ class Murphi:
     kaddress = "Address"
     kcacheval = "ClValue"
     kmachines = "Machines"
-    kmachnames = []
 
     # Record keywords
     rmessage = "Message"
@@ -104,21 +103,12 @@ class Murphi:
     msrc = {"src": kmachines}
     mdst = {"dst": kmachines}
 
-    BaseMsg = [madr, mtype, msrc, mdst]
-    SuperMsg = []
 
     # Machine instances
     iState = 'State'
     iID = 'ID'
     iFifo = 'Defermsg'
     iAccess = 'Perm'
-
-    Machines = []
-    Vectordef = []
-    Vectormap = {}
-    Vectorassign = {}
-    GlobalInit = {}
-    Messageassignmap ={}
 
     # Network parameters
     cordered = "O_NET_MAX"
@@ -128,9 +118,6 @@ class Murphi:
     k_onetwork = "onet_"
     unordered = "Unordered"
     k_unetwork = "unet_"
-
-    ONetworks = []
-    UNetworks = []
 
     # FIFOs
     k_fifo = "buf_"
@@ -162,15 +149,44 @@ class Murphi:
     tSEND = "SEND_"
     tMCAST = "MCAST_"
 
+    unlock_ss = "stable_state" 
+    lock_set = "lock_owner_set"
+
+    ssp_prefix = "SSP_"
+
     # Config Parameters
     cfifomax = 1
     enableFifo = 0
     corderedsz = cadrcnt * 3 * 2
     cunorderedsz = cadrcnt * 3 * 2
 
-    def __init__(self, parser, algorithm):
+    def __init__(self, parser, algorithm, verify_ssp):
 
-        murphifile = open(parser.getFilename().split(".")[0] + ".m", "w")
+        """ The following keywords need to be instance-specific. If they
+            are not then verifying multiple protocols within one process
+            (for example SSP + ProtoGen output) will lead to syntax errors
+            in all but the very first of the generated Murphi files."""
+
+        self.kmachnames = []
+
+        self.BaseMsg = [self.madr, self.mtype, self.msrc, self.mdst]
+        self.SuperMsg = []
+
+        self.Machines = []
+        self.Vectordef = []
+        self.Vectormap = {}
+        self.Vectorassign = {}
+        self.GlobalInit = {}
+        self.Messageassignmap ={}
+
+        self.ONetworks = []
+        self.UNetworks = []
+
+        file_name = parser.getFilename().split(".")[0] + ".m"
+        if verify_ssp:
+            file_name = self.ssp_prefix + file_name
+
+        murphifile = open(file_name, "w")
         self.parser = parser
 
         self.memaccessdef = parser.getAccess()
@@ -188,12 +204,16 @@ class Murphi:
         murphiout = ""
         murphiout += self._generateConst(parser) + self.nl
         murphiout += self._generateTypes(parser, algorithm) + self.nl
-        murphiout += self._generateVars(parser) + self.nl
+        murphiout += self._generateVars(parser, verify_ssp) + self.nl
         murphiout += self._generateFunc(parser) + self.nl
-        murphiout += self._generateObjFunc(algorithm) + self.nl
+        murphiout += self._generateObjFunc(algorithm, verify_ssp) + self.nl
+        if verify_ssp:
+            arch = "cache" # TODO is there a way around hardcoding this?
+            stable_states = parser.getStableStates().get(arch)
+            murphiout += self._generateUnlockRules(arch, stable_states)
         murphiout += self._generateFIFORecvRule(parser) + self.nl
         murphiout += self._generateNetworkRules(parser) + self.nl
-        murphiout += self._generateStartState(parser) + self.nl
+        murphiout += self._generateStartState(parser, verify_ssp) + self.nl
         murphiout += self._generateInvariants(parser) + self.nl
 
         murphifile.write(murphiout)
@@ -203,10 +223,13 @@ class Murphi:
 # RUN MURPHI
 ########################################################################################################################
 
-    def runMurphi(self):
+    def runMurphi(self, verify_ssp):
         makefile = open("Makefile", "w")
         murphiname = self.parser.getFilename().split(".")[0]
         mem = 2000
+
+        if verify_ssp:
+            murphiname = self.ssp_prefix + murphiname
 
         template = self._openTemplate(self.ftmpmake)
         replacekeys = [murphiname]
@@ -217,13 +240,18 @@ class Murphi:
         makefile.write(template)
         makefile.flush()
 
-        pdebug(subprocess.run(["make"], stdout=subprocess.PIPE).stdout.decode("utf-8"))
-        cmd = ["./" + murphiname, "-tv", "-pr", "-m", str(mem)]
-        report = subprocess.run(cmd, stdout=subprocess.PIPE).stdout.decode("utf-8")
-        pdebug(report)
-
-        reportfile = open(murphiname + ".txt", "w")
-        reportfile.write(report)
+        compilefile = open(murphiname + "_compile" + ".txt", "w")
+        pdebug(subprocess.run(["make"], stdout=compilefile, stderr=subprocess.STDOUT))#.stdout.decode("utf-8"))
+        if os.path.isfile("./" + murphiname):
+            reportfile = open(murphiname + "_results" + ".txt", "w")
+            cmd = ["./" + murphiname, "-tv", "-pr", "-m", str(mem)]
+            report = subprocess.run(cmd, stdout=reportfile, stderr=subprocess.STDOUT)#.stdout.decode("utf-8")
+            pdebug(report)
+            reportfile.close()
+        
+        compilefile.close()
+        #reportfile = open(murphiname + ".txt", "w")
+        #reportfile.write(report)
 
 ########################################################################################################################
 # CONST
@@ -605,7 +633,7 @@ class Murphi:
 ########################################################################################################################
 # VARIABLES
 ########################################################################################################################
-    def _generateVars(self, parser):
+    def _generateVars(self, parser, verify_ssp):
         varstr = "var " + self.nl
         varstr += self._genMachines(parser.getCacheSeq())
         varstr += self._genMachines(parser.getDirSeq())
@@ -613,6 +641,14 @@ class Murphi:
         varstr += self._genNetwork(parser.getNetwork())
         varstr += self.nl
         varstr += self._genFIFOs()
+
+        if verify_ssp: # add extra bookkeeping for locking/unlocking
+            varstr += self.nl
+            varstr += self.tab + self.lock_set + ": multiset[1] of " + self.SetKey \
+                    + "cache" #TODO make this less hardcoded maybe
+            varstr += self.end
+            varstr += self.tab + self.unlock_ss + ": " + self.statesuf + "cache"
+            varstr += self.end
 
         return varstr
 
@@ -782,13 +818,12 @@ class Murphi:
 # OBJECT FUNCTIONS
 # Sorry for the code below..... it will evolve if required
 ########################################################################################################################
-    def _generateObjFunc(self, algorithm):
+    def _generateObjFunc(self, algorithm, verify_ssp):
         behavstr = ""
         archs = algorithm.getArchStates()
 
         # Generate non-access function
         for arch in archs:
-
             deferstr = ""
             if self.defer:
                 deferstr += self._genDeferFunc(arch)
@@ -804,7 +839,7 @@ class Murphi:
 
         # Generate access function
         for arch in archs:
-            behavstr += self._genArchAccessFunc(arch, archs[arch])
+            behavstr += self._genArchAccessFunc(arch, archs[arch], verify_ssp)
 
         return behavstr
 
@@ -1078,7 +1113,24 @@ class Murphi:
 
     @staticmethod
     def _genVectCnt(vectortype, param1, param2):
-        return "VectorCount_" + vectortype + "(" + param1 + ")"
+        return "VectorCount_" + vectortype + "(" + param1 + ")" #TODO why does this fn take 3 args?
+
+    @staticmethod
+    def _genBagCnt(multiset, element_identifier, condition):
+        # To pass conditions on the form "multiset[x] = y", make sure to also
+        # pass element_identifier = "x"
+        return "MultiSetCount(" + element_identifier + ":" + multiset + ", " + condition + ")"
+
+    @staticmethod
+    def _genBagAdd(element, multiset):
+        return "MultiSetAdd(" + element +", " + multiset +")"
+
+    @staticmethod
+    def _genBagDel(multiset, element_identifier, condition):
+        # To pass conditions on the form "multiset[x] = y", make sure to also
+        # pass element_identifier = "x"
+        return "MultiSetRemovePred(" + element_identifier + ":" + multiset\
+                + ", " + condition +")"
 
     ####################################################################################################################
     # SEND FUNCTION
@@ -1260,7 +1312,7 @@ class Murphi:
 ########################################################################################################################
 # RULESET
 ########################################################################################################################
-    def _genArchAccessFunc(self, arch, states):
+    def _genArchAccessFunc(self, arch, states, verify_ssp):
         sendfctstr = ""
         rulesetstr = ""
 
@@ -1273,7 +1325,7 @@ class Murphi:
             rulestr = ""
             for state in sorted(states.keys()):
                 if len(states[state].getaccessmiss() + states[state].getevictmiss()):
-                    retstrs = self._genAccessState(arch, states[state])
+                    retstrs = self._genAccessState(arch, states[state], verify_ssp)
                     rulestr += retstrs[0] + self.nl
                     sendfctstr += retstrs[1] + self.nl
 
@@ -1298,7 +1350,7 @@ class Murphi:
 
         return statestr
 
-    def _genAccessState(self, arch, state):
+    def _genAccessState(self, arch, state, verify_ssp):
         transitions = state.getaccess() + state.getevictmiss()
 
         statestr = ""
@@ -1309,13 +1361,54 @@ class Murphi:
             ruleid = arch + "_" + transition.getstartstate().getstatename() + "_" + transition.getguard()
             sendfctstr += self._genSendFunctionHeader(arch, ruleid, transition) + self.nl
 
+            ccle_dot_state = self.ccle + "." + self.iState
+
             statestr += "rule \"" + ruleid + "\"" + self.nl
-            statestr += self.tab + self.ccle + "." + self.iState + " = " + arch + "_" + state.getstatename() + self.nl
+            statestr += self.tab + ccle_dot_state + " = " + arch + "_" \
+                     + state.getstatename() + self.nl
+            if verify_ssp:
+                statestr += " & (" + self._genBagCnt(self.lock_set, "l", "true") + " = 0)"
+            statestr += self.nl
             statestr += "==>" + self.nl
+            if verify_ssp:
+                statestr += self.tab + self.unlock_ss + " := " + ccle_dot_state
+                statestr += self.end
             statestr += self.tab + self.tSEND + ruleid + "(" + self.cadr + ", m)" + self.end
+            if verify_ssp:
+                statestr += self.tab + "if !(" + self.unlock_ss + " = " + ccle_dot_state \
+                         + ") then" + self.nl
+                statestr += self.tab + self.tab + self._genBagAdd("m", self.lock_set)
+                statestr += self.end
+                statestr += self.tab + "endif" + self.end
             statestr += "endrule" + self.end + self.nl
 
         return [statestr, sendfctstr]
+
+    def _generateUnlockRules(self, arch, stable_states):
+        
+        rulesetstr = self._genAccessHeader(arch) + self.nl
+        rulestr = ""
+
+        for state in stable_states:
+            ruleid = "Unlocking " + arch + "_" + state
+            rulestr += "rule \"" + ruleid + "\"" + self.nl
+            rulestr += self.tab + self.ccle + "." + self.iState + " = " + arch \
+                    + "_" + state
+            rulestr += " & !(" + self.ccle + "." + self.iState + " = " \
+                    + self.unlock_ss + ") & !(" + self._genBagCnt(\
+                    self.lock_set, "l", self.lock_set + "[l] = m") + " = 0)" 
+                    #TODO is it possible to not have "m" hardcoded here?
+            rulestr += self.nl
+            rulestr += "==>" + self.nl
+            rulestr += self.tab + self._genBagDel(self.lock_set, "l", "true") 
+            rulestr += self.end
+            rulestr += "endrule" + self.end + self.nl
+
+        rulesetstr += self._addtabs(rulestr, 1)
+        rulesetstr += self._genAccessEnd() + self.nl
+
+        return rulesetstr
+
 
     def _genSendFunctionHeader(self, arch, ruleid, transition):
         fctstr = "procedure " + self.tSEND + ruleid + \
@@ -1402,7 +1495,7 @@ class Murphi:
 # GENERATE START STATES
 ########################################################################################################################
 
-    def _generateStartState(self, parser):
+    def _generateStartState(self, parser, verify_ssp):
         startstr = "startstate" + self.nl + self.nl
 
         startdef = self._genDirectoryInit(parser)
@@ -1412,6 +1505,13 @@ class Murphi:
         startdef += self._genFIFOInit()
         startdef += self._genNetworkInit()
 
+        # TODO the code below is quite hacky, is there a way to make it better?
+        if verify_ssp:
+            # any cache will do as they have identical startstates
+            cache = parser.getCacheSeq()[0] 
+            startdef += self.tab + self.unlock_ss + " := cache_" \
+                        + self.GlobalInit[cache]['State'] + self.end
+        
         startstr += self._addtabs(startdef, 1)
 
         startstr += self.nl + "endstartstate" + self.end
