@@ -20,6 +20,8 @@ def pheader(header=''):
     if dbg:
         print(Fore.LIGHTBLUE_EX + header + Style.RESET_ALL)
 
+def psuccess(successmsg=''):
+    print(Fore.GREEN + successmsg + Style.RESET_ALL)
 
 def pdebug(debug=''):
     if dbg:

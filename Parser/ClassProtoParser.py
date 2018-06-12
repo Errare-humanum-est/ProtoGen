@@ -73,6 +73,7 @@ class ProtoParser:
     archNode = {}
     stableStates = {}
 
+
     dataMsgTypes = []
 
     def __init__(self, file=""):
@@ -87,6 +88,79 @@ class ProtoParser:
 ########################################################################################################################
 # PUBLIC FUNCTIONS
 ########################################################################################################################
+
+    def checkAccessBehaviourDefined(self):
+        # Ensure SSP specifies behaviour for every access in every stable state
+        for stable_state in self.getStableStates().get('cache'):
+            access_found_dict = { access: False for access in self.Accesses }
+            if 'I' in stable_state: # Don't expect evictions in Invalid state
+                # TODO this puts some pretty strict assumptions on the state
+                # naming convention - is there a way around this?
+                access_found_dict['evict'] = True
+            for trans in self.getArchitectures().get('cache'):
+                if (trans.getstartstate().getstatename() == stable_state
+                        and trans.getaccess() != ''):
+                    access_found_dict[trans.getaccess()] = True
+            for access, found in access_found_dict.items():
+                if not found:
+                    pwarning("No behaviour for an access of type \"" + access
+                             + "\" modelled for (cache) stable state \""
+                             + stable_state + "\" in the input SSP.")
+                    return False
+        # Have checked every stable state without finding any faults
+        return True
+
+    def checkAllStatesReachable(self):
+        for arch in self.getArchitectures():
+            arch_start_state_name = ''
+            
+            if arch == 'cache':
+                for key, val in self.cacheNode[arch].getvariables().items():
+                    if val == 'INITSTATE_':
+                        arch_start_state_name = key
+            else: # otherwise arch is directory
+                for key, val in self.dirNode[arch].getvariables().items():
+                    if val == 'INITSTATE_':
+                        arch_start_state_name = key
+
+            if arch_start_state_name == '':
+                pwarning("Unable to locate the name of the initial state of "
+                         "architecture \"" + arch + "\".")
+                return False
+
+            # Build up a graph of the transitions for the architecture
+            # (X : {A, B, ..} -> there are transitions
+            # from X to A, B, ...)
+            transition_graph = {}
+            for trans in self.getArchitectures().get(arch):
+                trans_state_name = trans.getstartstate().getstatename()
+                if trans_state_name in transition_graph:
+                    transition_graph[trans_state_name].add(
+                        trans.getfinalstate().getstatename())
+                else:
+                    transition_graph[trans_state_name] = {
+                        trans.getfinalstate().getstatename()}
+
+            # Keep track of which states have been visited
+            visited_map = set()
+
+            # Explore transition graph via DFS, adding to the visited map
+            # as we go
+            self._dfsExploreFromVertex(
+                    arch_start_state_name, transition_graph, visited_map)
+
+            # Make sure all stable states are reachable from the initial state
+            for state_name in self.getStableStates().get(arch):
+                if state_name not in visited_map:
+                    pwarning('State \"' + state_name + '\" of architecture \"'
+                             + arch + '\" is not reachable from the initial '
+                             'state as it has been defined in the input .pcc'
+                             ' file.')
+                    return False
+        
+        # Have now checked all specified architectures without finding any
+        # "lost" states
+        return True
 
     def getArchitectures(self):
         archtrans = {}
@@ -530,3 +604,18 @@ class ProtoParser:
         for entry in self.msgTypes:
             pdebug(entry)
         pdebug('\n')
+
+################################################################################
+# MISC
+################################################################################
+    def _dfsExploreFromVertex(self, start_state_name, transition_graph, visited_map):
+        # do nothing if we've already explored this node
+        if start_state_name not in visited_map: 
+            visited_map.add(start_state_name)
+
+            for state_name in transition_graph.get(start_state_name) or []:
+                # (the 'or []' here ensures Python doesn't throw an error if
+                # transition_graph.get(start_state_name) is None, but instead
+                # just does nothing)
+                self._dfsExploreFromVertex(state_name, transition_graph, visited_map)
+
