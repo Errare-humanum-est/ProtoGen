@@ -1,6 +1,6 @@
 TARGET = $0$
 
-MURPHIPATH = PATH_TO_MURPHI
+MURPHIPATH = /home/tux/Desktop/murphi
 INCLUDEPATH = ${MURPHIPATH}/include
 SRCPATH = ${MURPHIPATH}/src
 CFLAGS = -O2

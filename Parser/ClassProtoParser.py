@@ -1,4 +1,5 @@
 import antlr3
+import re
 
 from Monitor.Debug import *
 from Monitor.ProtoCCTable import ProtoCCTablePrinter
@@ -11,6 +12,8 @@ from DataObjects.ClassProtoCCObject import PCCObject
 from DataObjects.ClassStateNode import StateNode
 from DataObjects.ClassTransaction import Transaction
 from DataObjects.ClassMessage import Message
+
+from Graphv.ProtoCCGraph import ProtoCCGraph
 
 class ProtoParser:
 
@@ -73,7 +76,6 @@ class ProtoParser:
     archNode = {}
     stableStates = {}
 
-
     dataMsgTypes = []
 
     def __init__(self, file=""):
@@ -84,6 +86,8 @@ class ProtoParser:
             tree = parser.document().getTree()
             pdebug(tree.toStringTree())
             self._ParseNodes(tree)
+            #self._dArch()
+
 
 ########################################################################################################################
 # PUBLIC FUNCTIONS
@@ -172,6 +176,9 @@ class ProtoParser:
         transitions = []
         for transaction in transactions:
             transitions += transaction.gettransitions()
+
+        transitions = self._filterTransitions(transitions)
+
         return transitions
 
     def getConstants(self):
@@ -575,13 +582,54 @@ class ProtoParser:
         return transaction
 
 ########################################################################################################################
+# POST-PROCESSING
+########################################################################################################################
+    def _filterTransitions(self, transitions):
+        guardtransmap = {}
+        for transition in transitions:
+            guard = transition.getstartstate().getstatename() + transition.getguard() + "".join(transition.getcond())
+
+            if guard in guardtransmap:
+                entryset = set([self._stripstr(op.toStringTree()) for op in guardtransmap[guard].getoperation()])
+                transset = set([self._stripstr(op.toStringTree()) for op in transition.getoperation()])
+
+                if transset.issuperset(entryset):
+                    guardtransmap.update({guard: transition})
+                else:
+                    if not entryset.issuperset(transset):
+                        perror("In State: " + transition.getstartstate().getstatename() +
+                               "; At guard " + transition.getguard() +
+                               "; multiple inconsistent behavioural descriptions exist for condition:" +
+                               " ".join(transition.getcond()))
+
+            else:
+                guardtransmap.update({guard: transition})
+
+        return list(guardtransmap.values())
+
+    def _stripstr(self, string):
+        return re.sub(r'\W', '', string)
+
+########################################################################################################################
 # DEBUG
 ########################################################################################################################
+
+    def _dArch(self):
+        for arch in self.archNode:
+            transactions = self.archNode[arch]
+            transitions = []
+            for transaction in transactions:
+                transitions += transaction.gettransitions()
+
+            ProtoCCGraph("Spec: " + arch, transitions)
+
     def _pArchTable(self):
         for arch in self.archNode:
             transitions = []
             for transaction in self.archNode[arch]:
                 transitions += transaction.gettransitions()
+
+            transitions = self._filterTransitions(transitions)
 
             pheader(arch + ": Total number of transitions: " + str(len(transitions)))
             ProtoCCTablePrinter().ptransitiontable(transitions)

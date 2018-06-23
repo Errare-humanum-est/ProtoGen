@@ -6,7 +6,6 @@ import subprocess
 from Parser.ProtoCCcomTreeFct import *
 from Monitor.Debug import *
 
-
 class Murphi:
 
     nl = "\n"
@@ -103,7 +102,6 @@ class Murphi:
     msrc = {"src": kmachines}
     mdst = {"dst": kmachines}
 
-
     # Machine instances
     iState = 'State'
     iID = 'ID'
@@ -157,8 +155,8 @@ class Murphi:
     # Config Parameters
     cfifomax = 1
     enableFifo = 0
-    corderedsz = cadrcnt * 3 * 2
-    cunorderedsz = cadrcnt * 3 * 2
+    corderedsz = cadrcnt * 3 * 2 * 2
+    cunorderedsz = cadrcnt * 3 * 2 * 2
 
     def __init__(self, parser, algorithm, verify_ssp):
 
@@ -240,18 +238,29 @@ class Murphi:
         makefile.write(template)
         makefile.flush()
 
-        compilefile = open(murphiname + "_compile" + ".txt", "w")
-        pdebug(subprocess.run(["make"], stdout=compilefile, stderr=subprocess.STDOUT))#.stdout.decode("utf-8"))
+        self._runCompilation(murphiname)
+
         if os.path.isfile("./" + murphiname):
-            reportfile = open(murphiname + "_results" + ".txt", "w")
             cmd = ["./" + murphiname, "-tv", "-pr", "-m", str(mem)]
-            report = subprocess.run(cmd, stdout=reportfile, stderr=subprocess.STDOUT)#.stdout.decode("utf-8")
-            pdebug(report)
+            report = subprocess.run(cmd, stdout=subprocess.PIPE).stdout.decode("utf-8")
+            reportfile = open(murphiname + "_results" + ".txt", "w")
+            reportfile.write(report)
             reportfile.close()
-        
+
+            if "No error found" not in report:
+                pdebug(report)
+
+    def _runCompilation(self, murphiname):
+        compile = subprocess.run(["make"], stdout=subprocess.PIPE).stdout.decode("utf-8")
+        compilefile = open(murphiname + "_compile" + ".txt", "w")
+        compilefile.write(compile)
         compilefile.close()
-        #reportfile = open(murphiname + ".txt", "w")
-        #reportfile.write(report)
+
+        res = re.search(r'Makefile:[\w\s:]*\'[\w\s.]*\'\s*failed', compile)
+        if res:
+            pdebug(compile)
+            perror("ProtoGen terminated due to Murphi compilation error")
+
 
 ########################################################################################################################
 # CONST
@@ -294,7 +303,7 @@ class Murphi:
         typestr += self._typeMachines(parser.getDir(), machinetypes) + self.nl
         typestr += self._typeMachineUnion(machinetypes) + self.nl
 
-        self.kmachnames = list(machinetypes.values())
+        self.kmachnames = sorted(list(machinetypes.values()))
 
         machstr = self._genMessage(parser.getMessageNodes()) + self.nl
 
@@ -823,7 +832,7 @@ class Murphi:
         archs = algorithm.getArchStates()
 
         # Generate non-access function
-        for arch in archs:
+        for arch in sorted(archs.keys()):
             deferstr = ""
             if self.defer:
                 deferstr += self._genDeferFunc(arch)
@@ -858,26 +867,70 @@ class Murphi:
         statestr += "switch " + self.cinmsg + "." + self.cmtype + self.nl
 
         transitions = state.getdataack() + state.getremote()
-        transitions.sort(key=lambda x: x.getguard())
+        transitions.sort(key=lambda transition: (transition.getguard(),
+                                                 transition.getcond(),
+                                                 transition.getfinalstate().getstatename()))
+
+        # Guard clustering
+        guards = []
+        for transition in transitions:
+            guard =  transition.getguard()
+            if guard not in guards:
+                guards.append(guard)
+
+        guardmap = []
+        for guard in guards:
+            cluster = []
+            for transition in transitions:
+                if transition.getguard() == guard:
+                    cluster.append(transition)
+            guardmap.append([guard, cluster])
+
+        for guardcluster in guardmap:
+            # Sort transitions
+            guard = guardcluster[0]
+            cluster = guardcluster[1]
+
+            condmap = []
+            for transition in cluster:
+                conditions = transition.getcond()
+
+                condorder = []
+                condpreset = []
+                condstr = []
+                for condition in conditions:
+                    condflag = ""
+                    if condition.startswith(self.tCOND):
+                        condpreset.append(self.tCOND)
+                        condflag = "0"
+                    elif condition.startswith(self.tNCOND):
+                        condpreset.append(self.tNCOND)
+                        condflag = "1"
+                    else:
+                        perror("Unrecognized condition prefix")
+
+                    condstr.append(condition.split("_", 1)[1])
+                    condorder.append(condstr[-1] + condflag)
+
+                condmap.append(["".join(condorder), condstr, condpreset, transition])
+
+            print(condmap)
+
+            condmap.sort(key=lambda transition: (transition[0]))
+
+            if len(condmap) > 2:
+                print("STOP")
+
+            for nestingmap in condmap:
+
+
+
+
 
         prevtranstype = ""
-        prevcond = ""
+
         for ind in range(0, len(transitions)):
-            inmsgtype = transitions[ind].getrefguard() if transitions[ind].getrefguard() \
-                else transitions[ind].getguard()
-
-            if ind + 1 < len(transitions):
-                posttranstype = transitions[ind + 1].getguard()
-            else:
-                posttranstype = ""
-
-            ret = self._genTransition(arch, transitions[ind], prevtranstype, 0, posttranstype, prevcond)
-
-            statestr += ret[0] + self.nl
-            prevcond = ret[1]
-
-            if inmsgtype != posttranstype:
-                prevcond = ""
+            statestr += self._genTransition(arch, transitions[ind], prevtranstype, 0) + self.nl
 
             prevtranstype = transitions[ind].getguard()
 
@@ -886,19 +939,14 @@ class Murphi:
 
         return statestr
 
-    #def _genDeferTransition(self):
-
-
     # THIS FUNCTION WORKS FOR CURRENT USE CASE, HOWEVER A MORE SOPHISTICATED VERSION MIGHT BE REQUIRED FOR DIFFERENT
     # PROTOCOLS
-    def _genTransition(self, arch, transition, prevtranstype="", parseop=0, posttranstype="", prevcond=""):
+    def _genTransition(self, arch, transition, prevtranstype="", parseop=0):
         final = 0
         condcount = 0
 
         message = []
         msgmap = {}
-
-        curcond = ""
 
         inmsgtype = transition.getrefguard() if transition.getrefguard() else transition.getguard()
 
@@ -929,38 +977,12 @@ class Murphi:
                 statestr += self._genMCastFunction(operation, transition, msgmap, message) + self.end
 
             if operation.getText() == self.tCOND:
-                condstr = self._genCondFunction(operation, 0, arch, inmsgtype) + self.nl
-
-                newif = 1
-
-                if condcount == 0:
-                    curcond = condstr
-                    if posttranstype == inmsgtype and curcond == prevcond and prevcond:
-                        statestr += "endif" + self.end
-                    else:
-                        if prevcond:
-                            newif = 0
-
-
-                statestr += self._genCondKey(newif) + condstr
+                statestr += self._genCondFunction(operation, 0, arch, inmsgtype) + self.nl
                 condcount += 1
                 parseop = 1
 
             if operation.getText() == self.tNCOND:
-                condstr = self._genCondFunction(operation, 1, arch, inmsgtype) + self.nl
-
-                newif = 1
-
-                if condcount == 0:
-                    curcond = condstr
-                    if posttranstype == inmsgtype and curcond == prevcond and prevcond:
-                        statestr += "endif" + self.end
-                    else:
-                        if prevcond:
-                            newif = 0
-
-
-                statestr += self._genCondKey(newif) + condstr
+                statestr += self._genCondFunction(operation, 1, arch, inmsgtype) + self.nl
                 condcount += 1
                 parseop = 1
 
@@ -976,12 +998,11 @@ class Murphi:
             statestr += self._genArchAccess(transition)
 
         for cnt in range(0, condcount):
-            if not (posttranstype == inmsgtype and cnt == condcount-1):
-                statestr += "endif" + self.end
+            statestr += "endif" + self.end
 
         statestr = self._addtabs(statestr, 2)
 
-        return [headerstr + statestr, curcond]
+        return headerstr + statestr
 
     ####################################################################################################################
     # DeferMsgs
@@ -1205,7 +1226,7 @@ class Murphi:
     def _genCondFunction(self, objects, negation, arch, inmsgtype):
         definitions = objects.getChildren()
 
-        outstr = ""
+        outstr = "if "
 
         if negation:
             outstr += "!"
@@ -1226,13 +1247,6 @@ class Murphi:
         outstr += ") then"
 
         return outstr
-
-    def _genCondKey(self, newif):
-        if newif:
-            return "if "
-        else:
-            return "elsif"
-
 
     ####################################################################################################################
     # MESSAGE ASSIGNMENT
@@ -1352,6 +1366,9 @@ class Murphi:
 
     def _genAccessState(self, arch, state, verify_ssp):
         transitions = state.getaccess() + state.getevictmiss()
+        transitions.sort(key=lambda transition: (transition.getguard(),
+                                                 transition.getcond(),
+                                                 transition.getfinalstate().getstatename()))
 
         statestr = ""
         sendfctstr = ""
@@ -1417,7 +1434,7 @@ class Murphi:
         fctstr += "begin" + self.nl
         fctstr += self.tab + "alias " + self.ccle + ": " + self.instsuf + arch + "[m]." + \
                     self.CLIdent + "[adr] do" + self.nl
-        fctstr += self._genTransition(arch, transition, transition.getguard(), 1, "", 0)[0]
+        fctstr += self._genTransition(arch, transition, transition.getguard(), 1)
         fctstr += "endalias" + self.end
         fctstr += "end" + self.end + self.nl
 
@@ -1560,7 +1577,7 @@ class Murphi:
 
     def _genObjectInit(self, prefix, arch, definitions):
         startstr = ""
-        for definition in definitions:
+        for definition in sorted(definitions):
             if definition == self.iState:
                 startstr += prefix + definition + " := " + arch + "_" + definitions[definition] + self.end
             else:

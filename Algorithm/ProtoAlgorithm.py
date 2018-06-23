@@ -8,6 +8,8 @@ from Algorithm.TraceNode import NodeObj
 
 from Parser.ForkTree import ForkTree
 
+from Graphv.ProtoCCGraph import ProtoCCGraph
+
 from Monitor.ProtoCCTable import *
 
 
@@ -78,6 +80,9 @@ class ProtoAlgorithm:
             statesets = self._InputProcessing(arch, stablestates)
             traces = self._AssignStateSets(arch, statesets, stablestates)
 
+            # TODO DEBUG ONLY
+            statedict = self._ExtractStatesFromSets(statesets)
+
             self._FindProgressMessages(statesets)
             self._FindHiddenProgessMessages(statesets)
 
@@ -94,6 +99,7 @@ class ProtoAlgorithm:
             statedict = self._ExtractStatesFromSets(statesets)
 
             self._pTransitions(arch, statedict)
+            #self._dArch(arch, statedict)
 
             self.cacheStateSets += list(statesets.values())
 
@@ -120,6 +126,7 @@ class ProtoAlgorithm:
             statedict = self._ExtractStatesFromSets(statesets)
 
             self._pTransitions(arch, statedict)
+            self._dArch(arch, statedict)
 
             self.archProtoGen.update({arch: statedict})
             pdebug("")
@@ -189,6 +196,9 @@ class ProtoAlgorithm:
     # DEBUG
     ########################################################################################################################
 
+    def _dArch(self, arch, statedict):
+        ProtoCCGraph("ProtoSpec: " + arch, self._pGetTransitions(statedict))
+
     def _pStates(self, statesets):
         states = self._ExtractStatesFromSets(statesets)
         statelist = []
@@ -205,8 +215,14 @@ class ProtoAlgorithm:
 
     def _pGetTransitions(self, statedict):
         transitions = []
-        for state in sorted(statedict.keys()):
+        #for state in sorted(statedict.keys()):
+        for state in statedict:
             transitions += statedict[state].gettransitions()
+
+        transitions = sorted(transitions, key=lambda transition: (transition.getstartstate().getstatename(),
+                                                                  transition.getfinalstate().getstatename(),
+                                                                  transition.getguard(),
+                                                                  transition.getcond()))
         return transitions
 
     ########################################################################################################################
@@ -304,7 +320,13 @@ class ProtoAlgorithm:
             else:
                 statetransmap.update({startstate: [transition]})
 
-        perror("Terminal state found in input description", set(startnames) == set(finalnames))
+        startset = set(startnames)
+        finalset = set(finalnames)
+
+
+        # TODO TEMP DISABLED
+        #perror("Terminal state found in input description: " + str(startset.symmetric_difference(finalset)),
+        #       startset == finalset)
 
         return statenamelist, statetransmap
 
@@ -628,6 +650,7 @@ class ProtoAlgorithm:
 
         # Test if stable state is startstate of current state
         if state in stateset.getstartstates():
+
             # Find path startstate to state
             guards = self._FindAccessTrace(state, stateset, stablestates)
 
@@ -682,20 +705,22 @@ class ProtoAlgorithm:
             state = finalset.getstablestate()
             found = 0
             ind = 0
-            while ind < len(guards):
-                transition = state.gettransitionbyguard(guards[ind])
 
-                if isinstance(transition, list):
-                    ProtoCCTablePrinter.ptransitions(transition)
-                    assert 0, "No support yet for transition list"
+            if guards != 0:
+                while ind < len(guards):
+                    transition = state.gettransitionbyguard(guards[ind])
 
-                if transition:
-                    state = transition.getfinalstate()
-                    if ind == len(guards) - 1:
-                        found = 1
-                    ind += 1
-                else:
-                    ind = len(guards)
+                    if isinstance(transition, list):
+                        ProtoCCTablePrinter.ptransitions(transition)
+                        assert 0, "No support yet for transition list"
+
+                    if transition:
+                        state = transition.getfinalstate()
+                        if ind == len(guards) - 1:
+                            found = 1
+                        ind += 1
+                    else:
+                        ind = len(guards)
 
             if found:
                 if set(state.getstatesets()).issuperset(set(finalsets)):
@@ -1305,7 +1330,8 @@ class ProtoAlgorithm:
                             if entry in stateevictmap:
                                 stateevictmap[entry].append(evictmap[state])
                             else:
-                                stateevictmap.update({entry: [evictmsgstatemap[state]]})
+                                if state in evictmsgstatemap:
+                                    stateevictmap.update({entry: [evictmsgstatemap[state]]})
 
         # Evictions only need to be possible in stable states
         # Transient states automatically inherit from stable states

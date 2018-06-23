@@ -12,7 +12,13 @@ from Monitor.Debug import *
 spacer = "\n\n\n"
 
 if len(sys.argv[1:]) == 0:
-    file = "MSI_Proto.pcc"
+    #file = "MSI_Proto.pcc"
+    #file = "MESI.pcc"
+    #file = "MOSI.pcc"
+
+    file = "MESI_unordered.pcc"
+    #file = "John_MESI_unordered.pcc"
+    #sfile = "MSI_Simple.pcc"
 else:
     assert len(sys.argv[1:]) == 1, "Too many arguments"
     file = sys.argv[1]
@@ -22,12 +28,12 @@ Config = ProtoConfig()
 # Frontend
 pheader("PROTOGEN PARSER")
 Parser = ProtoParser(file)
-if not Parser.checkAccessBehaviourDefined():
-    print("Exiting.")
-    sys.exit(1)
-if not Parser.checkAllStatesReachable():
-    print("Exiting.")
-    sys.exit(1)
+#if not Parser.checkAccessBehaviourDefined():
+#    print("Exiting.")
+#    sys.exit(1)
+#if not Parser.checkAllStatesReachable():
+#    print("Exiting.")
+#    sys.exit(1)
 
 talgo = time.time()
 pheader(spacer+"PROTOGEN ALGORITHM")
@@ -43,6 +49,8 @@ talgo = time.time()
 pheader(spacer+"Starting SSP verification" + '\n')
 SSP_MurphiDesc.runMurphi(True)
 ssp_success = False
+
+
 try:
     resultsfile = open("SSP_" + file.split(".")[0] + "_results.txt")
 except FileNotFoundError:
