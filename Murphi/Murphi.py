@@ -891,6 +891,7 @@ class Murphi:
             guard = guardcluster[0]
             cluster = guardcluster[1]
 
+            maxdepth = 0
             condmap = []
             for transition in cluster:
                 conditions = transition.getcond()
@@ -912,27 +913,51 @@ class Murphi:
                     condstr.append(condition.split("_", 1)[1])
                     condorder.append(condstr[-1] + condflag)
 
+                maxdepth = len(condpreset) if len(condpreset) > maxdepth else maxdepth
+
                 condmap.append(["".join(condorder), condstr, condpreset, transition])
 
-            print(condmap)
-
             condmap.sort(key=lambda transition: (transition[0]))
+
+            # REMOVE DUPLICATES RELATED TO REDUNDANT IFs. DO PERFECT NESTING.
+            prevcond = ""
+            prevop = ""
+            for indcond in range(0, maxdepth):
+                for indtrans in range(0, len(condmap)):
+                    condentry = condmap[indtrans][1]
+                    if len(condentry) > indcond:
+                        if condmap[indtrans][1][indcond] == prevcond and condmap[indtrans][2][indcond] == prevop:
+                            # Clear condpreset entry if duplicates
+                            prevop = condmap[indtrans][2][indcond]
+                            condmap[indtrans][2][indcond] = ""
+                        else:
+                            prevcond = condmap[indtrans][1][indcond]
+                            prevop = condmap[indtrans][2][indcond]
+                    else:
+                        prevcond = ""
+                        prevop = ""
 
             if len(condmap) > 2:
                 print("STOP")
 
-            for nestingmap in condmap:
+            prevtranstype = ""
+            for condentry in condmap:
+                # [COND_, "", NCOND]
+                condsel = condentry[2]
+                transition = condentry[3]
+
+                statestr += self._genTransition(arch, transition, prevtranstype, 0, condsel) + self.nl
+
+                prevtranstype = transition.getguard()
 
 
+        #prevtranstype = ""
 
+        #for ind in range(0, len(transitions)):
+        #    statestr += self._genTransition(arch, transitions[ind], prevtranstype, 0) + self.nl
 
+        #    prevtranstype = transitions[ind].getguard()
 
-        prevtranstype = ""
-
-        for ind in range(0, len(transitions)):
-            statestr += self._genTransition(arch, transitions[ind], prevtranstype, 0) + self.nl
-
-            prevtranstype = transitions[ind].getguard()
 
         statestr += self.tab + " else return false" + self.end
         statestr += "endswitch" + self.end
@@ -941,7 +966,7 @@ class Murphi:
 
     # THIS FUNCTION WORKS FOR CURRENT USE CASE, HOWEVER A MORE SOPHISTICATED VERSION MIGHT BE REQUIRED FOR DIFFERENT
     # PROTOCOLS
-    def _genTransition(self, arch, transition, prevtranstype="", parseop=0):
+    def _genTransition(self, arch, transition, prevtranstype="", parseop=0, condsel=0):
         final = 0
         condcount = 0
 
@@ -976,13 +1001,18 @@ class Murphi:
             if operation.getText() == self.tMCAST and parseop:
                 statestr += self._genMCastFunction(operation, transition, msgmap, message) + self.end
 
+            # For every if cond=true, there exists an else (if cond=false)
             if operation.getText() == self.tCOND:
-                statestr += self._genCondFunction(operation, 0, arch, inmsgtype) + self.nl
+                condimp = condsel[condcount]
+                if condimp:
+                    statestr += self._genIfCondFunction(operation, 0, arch, inmsgtype) + self.nl
                 condcount += 1
                 parseop = 1
 
             if operation.getText() == self.tNCOND:
-                statestr += self._genCondFunction(operation, 1, arch, inmsgtype) + self.nl
+                condimp = condsel[condcount]
+                if condimp:
+                    statestr += self._genElseCondFunction() + self.nl
                 condcount += 1
                 parseop = 1
 
@@ -997,8 +1027,10 @@ class Murphi:
                         arch + "_" + transition.getfinalstate().getstatename() + self.end
             statestr += self._genArchAccess(transition)
 
-        for cnt in range(0, condcount):
-            statestr += "endif" + self.end
+        # TODO
+        # Only for the number of NCOND_
+        #for cnt in range(0, ):
+        #    statestr += "endif" + self.end
 
         statestr = self._addtabs(statestr, 2)
 
@@ -1223,7 +1255,7 @@ class Murphi:
     ####################################################################################################################
     # COND FUNCTION
     ####################################################################################################################
-    def _genCondFunction(self, objects, negation, arch, inmsgtype):
+    def _genIfCondFunction(self, objects, negation, arch, inmsgtype):
         definitions = objects.getChildren()
 
         outstr = "if "
@@ -1247,6 +1279,9 @@ class Murphi:
         outstr += ") then"
 
         return outstr
+
+    def _genElseCondFunction(self):
+        return "else"
 
     ####################################################################################################################
     # MESSAGE ASSIGNMENT
