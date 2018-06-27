@@ -8,8 +8,6 @@ from Algorithm.TraceNode import NodeObj
 
 from Parser.ForkTree import ForkTree
 
-from Graphv.ProtoCCGraph import ProtoCCGraph
-
 from Monitor.ProtoCCTable import *
 
 
@@ -80,9 +78,6 @@ class ProtoAlgorithm:
             statesets = self._InputProcessing(arch, stablestates)
             traces = self._AssignStateSets(arch, statesets, stablestates)
 
-            # TODO DEBUG ONLY
-            statedict = self._ExtractStatesFromSets(statesets)
-
             self._FindProgressMessages(statesets)
             self._FindHiddenProgessMessages(statesets)
 
@@ -99,7 +94,6 @@ class ProtoAlgorithm:
             statedict = self._ExtractStatesFromSets(statesets)
 
             self._pTransitions(arch, statedict)
-            #self._dArch(arch, statedict)
 
             self.cacheStateSets += list(statesets.values())
 
@@ -126,7 +120,6 @@ class ProtoAlgorithm:
             statedict = self._ExtractStatesFromSets(statesets)
 
             self._pTransitions(arch, statedict)
-            self._dArch(arch, statedict)
 
             self.archProtoGen.update({arch: statedict})
             pdebug("")
@@ -196,9 +189,6 @@ class ProtoAlgorithm:
     # DEBUG
     ########################################################################################################################
 
-    def _dArch(self, arch, statedict):
-        ProtoCCGraph("ProtoSpec: " + arch, self._pGetTransitions(statedict))
-
     def _pStates(self, statesets):
         states = self._ExtractStatesFromSets(statesets)
         statelist = []
@@ -215,7 +205,6 @@ class ProtoAlgorithm:
 
     def _pGetTransitions(self, statedict):
         transitions = []
-        #for state in sorted(statedict.keys()):
         for state in statedict:
             transitions += statedict[state].gettransitions()
 
@@ -323,10 +312,8 @@ class ProtoAlgorithm:
         startset = set(startnames)
         finalset = set(finalnames)
 
-
-        # TODO TEMP DISABLED
-        #perror("Terminal state found in input description: " + str(startset.symmetric_difference(finalset)),
-        #       startset == finalset)
+        perror("Terminal state found in input description: " + str(startset.symmetric_difference(finalset)),
+               startset == finalset)
 
         return statenamelist, statetransmap
 

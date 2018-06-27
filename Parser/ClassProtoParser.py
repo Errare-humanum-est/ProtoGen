@@ -13,8 +13,6 @@ from DataObjects.ClassStateNode import StateNode
 from DataObjects.ClassTransaction import Transaction
 from DataObjects.ClassMessage import Message
 
-from Graphv.ProtoCCGraph import ProtoCCGraph
-
 class ProtoParser:
 
     # PARSER TOKENS ####################################################################################################
@@ -86,7 +84,6 @@ class ProtoParser:
             tree = parser.document().getTree()
             pdebug(tree.toStringTree())
             self._ParseNodes(tree)
-            #self._dArch()
 
 
 ########################################################################################################################
@@ -602,15 +599,6 @@ class ProtoParser:
 ########################################################################################################################
 # DEBUG
 ########################################################################################################################
-
-    def _dArch(self):
-        for arch in self.archNode:
-            transactions = self.archNode[arch]
-            transitions = []
-            for transaction in transactions:
-                transitions += transaction.gettransitions()
-
-            ProtoCCGraph("Spec: " + arch, transitions)
 
     def _pArchTable(self):
         for arch in self.archNode:
