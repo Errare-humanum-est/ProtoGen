@@ -23,9 +23,9 @@ Config = ProtoConfig()
 # Frontend
 pheader("PROTOGEN PARSER")
 Parser = ProtoParser(file)
-#if not Parser.checkAccessBehaviourDefined():
-#    print("Exiting.")
-#    sys.exit(1)
+if not Parser.checkAccessBehaviourDefined():
+    print("Exiting.")
+    sys.exit(1)
 if not Parser.checkAllStatesReachable():
     print("Exiting.")
     sys.exit(1)

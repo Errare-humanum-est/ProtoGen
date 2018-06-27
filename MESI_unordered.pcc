@@ -129,9 +129,25 @@ Architecture cache {
         resp.send(msg);
     }
 
-    Process(S, evict, SI){
+    Process(S, evict, State){
         msg = Request(PutS, ID, directory.ID);
         req.send(msg);
+
+        await{
+            when PutS_Ack:
+                State=I;
+                break;
+
+             when Inv:
+                    msg = Resp(Inv_Ack, ID, Inv.src, cl);
+                    resp.send(msg);
+
+                    await{
+                        when PutI_Ack:
+                            State = I;
+
+                    }
+        }
     }
 
     // M ////////////////////////////////////////////////////////
@@ -154,44 +170,46 @@ Architecture cache {
         resp.send(msg);
     }
 
-
-    Process(M, evict, MI){
+    Process(M, evict, State){
         msg = Resp(PutM, ID, directory.ID, cl);
         req.send(msg);
+
+        await{
+            when Put_Ack:
+                State=I;
+                break;
+
+            when Fwd_GetS:
+                msg = Resp(GetS_Ack, ID, Fwd_GetS.src, cl);
+                resp.send(msg);
+                msg = Resp(WB, ID, directory.ID, cl);
+                resp.send(msg);
+
+                await{
+                    when PutS_Ack:
+                        State=I;
+                        break;
+                }
+
+            when Fwd_GetM:
+                msg = Resp(GetM_Ack_D, ID, Fwd_GetM.src, cl);
+                resp.send(msg);
+                msg = Resp(Done, ID, directory.ID, cl);
+                resp.send(msg);
+
+                await{
+                    when Inv:
+                        msg = Resp(Inv_Ack, ID, Inv.src, cl);
+                        resp.send(msg);
+
+                        await{
+                            when PutI_Ack:
+                                State = I;
+
+                        }
+                }
+        }
     }
-
-    // Directory in M
-    Process(MI, Put_Ack, I){}
-
-    // Directory in S
-    Process(MI, Fwd_GetS, SI){
-        msg = Resp(GetS_Ack, ID, Fwd_GetS.src, cl);
-        resp.send(msg);
-        msg = Resp(WB, ID, directory.ID, cl);
-        resp.send(msg);
-    }
-
-    // Pending PutS_Ack
-    Process(SI, PutS_Ack, I){}
-
-
-    // Directory in I
-    Process(MI, Fwd_GetM, II){
-        msg = Resp(GetM_Ack_D, ID, Fwd_GetM.src, cl);
-        resp.send(msg);
-        msg = Resp(Done, ID, directory.ID, cl);
-        resp.send(msg);
-    }
-
-    Process(SI, Inv, II){
-        msg = Resp(Inv_Ack, ID, Inv.src, cl);
-        resp.send(msg);
-    }
-
-    // An invalidate is still to be expected
-    Process(II, PutI_Ack, I){
-    }
-
 
     // E ////////////////////////////////////////////////////////
     Process(E, load){
@@ -213,45 +231,46 @@ Architecture cache {
         resp.send(msg);
     }
 
-
-    Process(E, evict, EI){
+    Process(E, evict, State){
         msg = Resp(PutE, ID, directory.ID, cl);
         req.send(msg);
+
+        await{
+            when Put_Ack:
+                State=I;
+                break;
+
+            when Fwd_GetS:
+                msg = Resp(GetS_Ack, ID, Fwd_GetS.src, cl);
+                resp.send(msg);
+                msg = Resp(WB, ID, directory.ID, cl);
+                resp.send(msg);
+
+                await{
+                    when PutS_Ack:
+                        State=I;
+                        break;
+                }
+
+            when Fwd_GetM:
+                msg = Resp(GetM_Ack_D, ID, Fwd_GetM.src, cl);
+                resp.send(msg);
+                msg = Resp(Done, ID, directory.ID, cl);
+                resp.send(msg);
+
+                await{
+                    when Inv:
+                        msg = Resp(Inv_Ack, ID, Inv.src, cl);
+                        resp.send(msg);
+
+                        await{
+                            when PutI_Ack:
+                                State = I;
+
+                        }
+                }
+        }
     }
-
-    // Directory in E
-    Process(EI, Put_Ack, I){}
-
-    // Directory in S
-    Process(EI, Fwd_GetS, SI){
-        msg = Resp(GetS_Ack, ID, Fwd_GetS.src, cl);
-        resp.send(msg);
-        msg = Resp(WB, ID, directory.ID, cl);
-        resp.send(msg);
-    }
-
-    // Pending PutS_Ack
-    Process(SI, PutS_Ack, I){}
-
-
-    // Directory in I
-    Process(EI, Fwd_GetM, II){
-        msg = Resp(GetM_Ack_D, ID, Fwd_GetM.src, cl);
-        resp.send(msg);
-        msg = Resp(Done, ID, directory.ID, cl);
-        resp.send(msg);
-    }
-
-    Process(SI, Inv, II){
-        msg = Resp(Inv_Ack, ID, Inv.src, cl);
-        resp.send(msg);
-    }
-
-    // An invalidate is still to be expected
-    Process(II, PutI_Ack, I){
-    }
-
-
 }
 
 Architecture directory {
@@ -422,5 +441,4 @@ Architecture directory {
        }
        cache.del(PutE.src);
     }
-
 }
