@@ -887,8 +887,6 @@ class Murphi:
             guardmap.append([guard, cluster])
 
         for guardcluster in guardmap:
-            # Sort transitions
-            guard = guardcluster[0]
             cluster = guardcluster[1]
 
             maxdepth = 0
@@ -915,11 +913,26 @@ class Murphi:
 
                 maxdepth = len(condpreset) if len(condpreset) > maxdepth else maxdepth
 
-                condmap.append(["".join(condorder), condstr, condpreset, transition])
+                exists = 0
+                for condentry in condmap:
+                    if "".join(condorder) == condentry[0]:
+                        exists = 1
+
+                if not exists:
+                    condmap.append(["".join(condorder), condstr, condpreset, transition])
 
             condmap.sort(key=lambda transition: (transition[0]))
 
-            # REMOVE DUPLICATES RELATED TO REDUNDANT IFs. DO PERFECT NESTING.
+            endifcount=[]
+            for condentry in condmap:
+                count = 0
+                for condpreset in reversed(condentry[2]):
+                    if condpreset == self.tNCOND:
+                        count += 1
+                    else:
+                        break
+                endifcount.append(count)
+
             prevcond = ""
             prevop = ""
             for indcond in range(0, maxdepth):
@@ -927,7 +940,6 @@ class Murphi:
                     condentry = condmap[indtrans][1]
                     if len(condentry) > indcond:
                         if condmap[indtrans][1][indcond] == prevcond and condmap[indtrans][2][indcond] == prevop:
-                            # Clear condpreset entry if duplicates
                             prevop = condmap[indtrans][2][indcond]
                             condmap[indtrans][2][indcond] = ""
                         else:
@@ -937,27 +949,14 @@ class Murphi:
                         prevcond = ""
                         prevop = ""
 
-            if len(condmap) > 2:
-                print("STOP")
-
             prevtranstype = ""
-            for condentry in condmap:
+            for condind in range(0, len(condmap)):
                 # [COND_, "", NCOND]
-                condsel = condentry[2]
-                transition = condentry[3]
+                condsel = condmap[condind][2]
+                transition = condmap[condind][3]
 
-                statestr += self._genTransition(arch, transition, prevtranstype, 0, condsel) + self.nl
-
+                statestr += self._genTransition(arch, transition, prevtranstype, 0, condsel, endifcount[condind]) + self.nl
                 prevtranstype = transition.getguard()
-
-
-        #prevtranstype = ""
-
-        #for ind in range(0, len(transitions)):
-        #    statestr += self._genTransition(arch, transitions[ind], prevtranstype, 0) + self.nl
-
-        #    prevtranstype = transitions[ind].getguard()
-
 
         statestr += self.tab + " else return false" + self.end
         statestr += "endswitch" + self.end
@@ -966,7 +965,7 @@ class Murphi:
 
     # THIS FUNCTION WORKS FOR CURRENT USE CASE, HOWEVER A MORE SOPHISTICATED VERSION MIGHT BE REQUIRED FOR DIFFERENT
     # PROTOCOLS
-    def _genTransition(self, arch, transition, prevtranstype="", parseop=0, condsel=0):
+    def _genTransition(self, arch, transition, prevtranstype="", parseop=0, condsel=0, endifcnt=0):
         final = 0
         condcount = 0
 
@@ -1027,10 +1026,8 @@ class Murphi:
                         arch + "_" + transition.getfinalstate().getstatename() + self.end
             statestr += self._genArchAccess(transition)
 
-        # TODO
-        # Only for the number of NCOND_
-        #for cnt in range(0, ):
-        #    statestr += "endif" + self.end
+        for cnt in range(0, endifcnt):
+            statestr += "endif" + self.end
 
         statestr = self._addtabs(statestr, 2)
 

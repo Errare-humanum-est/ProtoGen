@@ -1358,3 +1358,4 @@ class ProtoAlgorithm:
                     else:
                         for newevicttrans in evicttrans:
                             state.addtransitions(self._CopyModifyTransition(newevicttrans, state, state))
+

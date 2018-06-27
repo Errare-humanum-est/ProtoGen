@@ -85,9 +85,6 @@ class State:
                     else:
                         self.evictMiss.append(transition)
             else:
-                # if startstateid == finalstateid:
-                #     self.remoteHit.append(transition)
-                # else:
                 if transition.getoutmsg():
                     self.remoteMiss.append(transition)
                 else:
@@ -128,21 +125,6 @@ class State:
             if transition.getguard() == guard:
                 return transition
         return 0
-        # rettransitions = []
-        # for transition in self.setTrans:
-        #     if transition.getguard() == guard:
-        #         rettransitions.append(transition)
-        #
-        # if rettransitions:
-        #     if len(rettransitions) == 1:
-        #         # Default cache case
-        #         # Theory: Multiple transitions by same guard possible for directory depending on interal state
-        #         return rettransitions[0]
-        #     else:
-        #         # multiple transitions by same guard possible for directory depending on interal state
-        #         return rettransitions
-        # else:
-        #     return 0
 
     def getmulttransitionsbyguard(self, guard):
         rettransitions = []
