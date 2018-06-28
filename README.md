@@ -2,7 +2,7 @@ ProtoGen is still under development. This is an alpha release.
 
 There is currently no type checking implemented for the ProtoCC language frontend, but it will be provided in the near future. Furthermore, multiple new features are in development, which will be published in the near future. 
 
-ProtoGen v0.5: Now supports SSP verification 
+ProtoGen v0.5: Now supports SSP verification. The SSP is verified before ProtoGen generates the concurrent protocol. 
 
 A detailed descritpion of the ProtoGen algorithm is provided here: http://homepages.inf.ed.ac.uk/vnagaraj/papers/isca18a.pdf
 
