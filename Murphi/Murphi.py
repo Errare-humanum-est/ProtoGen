@@ -93,7 +93,9 @@ class Murphi:
     defmsgname = "msg"
 
     cadr = "adr"
+    cmach = "m" # if you change this please change the template files too
     ccle = "cle"
+    cdle = "dle"
     cmtype = "mtype"
     cinmsg = "inmsg"
 
@@ -147,10 +149,11 @@ class Murphi:
     tSEND = "SEND_"
     tMCAST = "MCAST_"
 
-    unlock_ss = "stable_state" 
-    lock_set = "lock_owner_set"
+    lock_set = "lock_set"
 
     ssp_prefix = "SSP_"
+
+    unlocking_tag = "Unlocking"
 
     # Config Parameters
     cfifomax = 1
@@ -204,14 +207,13 @@ class Murphi:
         murphiout += self._generateTypes(parser, algorithm) + self.nl
         murphiout += self._generateVars(parser, verify_ssp) + self.nl
         murphiout += self._generateFunc(parser) + self.nl
-        murphiout += self._generateObjFunc(algorithm, verify_ssp) + self.nl
+        murphiout += self._generateObjFunc(algorithm, verify_ssp, parser) + self.nl
         if verify_ssp:
-            arch = "cache" # TODO is there a way around hardcoding this?
-            stable_states = parser.getStableStates().get(arch)
-            murphiout += self._generateUnlockRules(arch, stable_states)
+            for cache in parser.getCaches():
+                murphiout += self._generateUnlockRules(cache, parser)
         murphiout += self._generateFIFORecvRule(parser) + self.nl
         murphiout += self._generateNetworkRules(parser) + self.nl
-        murphiout += self._generateStartState(parser, verify_ssp) + self.nl
+        murphiout += self._generateStartState(parser) + self.nl
         murphiout += self._generateInvariants(parser) + self.nl
 
         murphifile.write(murphiout)
@@ -653,10 +655,11 @@ class Murphi:
 
         if verify_ssp: # add extra bookkeeping for locking/unlocking
             varstr += self.nl
-            varstr += self.tab + self.lock_set + ": multiset[1] of " + self.SetKey \
-                    + "cache" #TODO make this less hardcoded maybe
-            varstr += self.end
-            varstr += self.tab + self.unlock_ss + ": " + self.statesuf + "cache"
+            # Create one lock set per cache type declared
+            # (this circumvents Murphi type issues)
+            for cache in parser.getCaches():
+                varstr += self.tab + self.lock_set + "_" + cache \
+                          + ": multiset[1] of " + self.SetKey + cache
             varstr += self.end
 
         return varstr
@@ -827,7 +830,7 @@ class Murphi:
 # OBJECT FUNCTIONS
 # Sorry for the code below..... it will evolve if required
 ########################################################################################################################
-    def _generateObjFunc(self, algorithm, verify_ssp):
+    def _generateObjFunc(self, algorithm, verify_ssp, parser):
         behavstr = ""
         archs = algorithm.getArchStates()
 
@@ -848,7 +851,7 @@ class Murphi:
 
         # Generate access function
         for arch in archs:
-            behavstr += self._genArchAccessFunc(arch, archs[arch], verify_ssp)
+            behavstr += self._genArchAccessFunc(arch, archs[arch], verify_ssp, parser)
 
         return behavstr
 
@@ -1105,12 +1108,14 @@ class Murphi:
 
     def _genArchHeader(self, arch):
         fctheader = "function Func_" + arch + \
-                    "(" + self.cinmsg + ":" + self.rmessage + "; m:" + self.SetKey + arch + ") : boolean" + self.end
+                    "(" + self.cinmsg + ":" + self.rmessage + "; " + self.cmach + ":" + self.SetKey + arch \
+                    + ") : boolean" + self.end
         fctheader += "var " + self.defmsgname + ": " + self.rmessage + self.end
         fctheader += "begin" + self.nl
         fctheader += self.tab + "alias " + self.cadr + ": " + self.cinmsg + "." + self.cadr + " do" + self.nl
         fctheader += self.tab + "alias " + self.ccle + \
-                     ": " + self.instsuf + arch + "[m]." + self.CLIdent + "[" + self.cadr + "] do" + self.nl
+                     ": " + self.instsuf + arch + "[" + self.cmach + "]." + self.CLIdent + "[" + self.cadr + "] do" \
+                     + self.nl
         fctheader += "switch " + self.ccle + "." + self.iState + self.nl
 
         return fctheader
@@ -1358,7 +1363,7 @@ class Murphi:
 ########################################################################################################################
 # RULESET
 ########################################################################################################################
-    def _genArchAccessFunc(self, arch, states, verify_ssp):
+    def _genArchAccessFunc(self, arch, states, verify_ssp, parser):
         sendfctstr = ""
         rulesetstr = ""
 
@@ -1371,7 +1376,7 @@ class Murphi:
             rulestr = ""
             for state in sorted(states.keys()):
                 if len(states[state].getaccessmiss() + states[state].getevictmiss()):
-                    retstrs = self._genAccessState(arch, states[state], verify_ssp)
+                    retstrs = self._genAccessState(arch, states[state], verify_ssp, parser)
                     rulestr += retstrs[0] + self.nl
                     sendfctstr += retstrs[1] + self.nl
 
@@ -1382,10 +1387,12 @@ class Murphi:
         return sendfctstr + rulesetstr
 
     def _genAccessHeader(self, arch):
-        fctstr = "ruleset m:" + self.SetKey + arch + " do" + self.nl
+        fctstr = "ruleset " + self.cmach + ":" + self.SetKey + arch + " do" \
+                 + self.nl
         fctstr += "ruleset "+ self.cadr +":" + self.kaddress + " do" + self.nl
-        fctstr += self.tab + "alias " + self.ccle + ":" + self.instsuf + arch + "[m]." + \
-                    self.CLIdent + "[adr] do" + self.nl
+        fctstr += self.tab + "alias " + self.ccle + ":" + self.instsuf + arch \
+                  + "[" + self.cmach + "]." + self.CLIdent + "[" + self.cadr \
+                  + "] do" + self.nl
 
         return fctstr
 
@@ -1396,7 +1403,7 @@ class Murphi:
 
         return statestr
 
-    def _genAccessState(self, arch, state, verify_ssp):
+    def _genAccessState(self, arch, state, verify_ssp, parser):
         transitions = state.getaccess() + state.getevictmiss()
         transitions.sort(key=lambda transition: (transition.getguard(),
                                                  transition.getcond(),
@@ -1416,40 +1423,58 @@ class Murphi:
             statestr += self.tab + ccle_dot_state + " = " + arch + "_" \
                      + state.getstatename() + self.nl
             if verify_ssp:
-                statestr += " & (" + self._genBagCnt(self.lock_set, "l", "true") + " = 0)"
+                # Ensure all aspects of the system are unlocked
+                for cache in parser.getCaches():
+                    statestr += " & (" \
+                                + self._genBagCnt(
+                                        self.lock_set + "_" + cache,
+                                        "l",
+                                        "true") \
+                                + " = 0)"
             statestr += self.nl
             statestr += "==>" + self.nl
             if verify_ssp:
-                statestr += self.tab + self.unlock_ss + " := " + ccle_dot_state
-                statestr += self.end
+                statestr += self.tab + self._genBagAdd("m", self.lock_set + "_" + cache) + self.end
             statestr += self.tab + self.tSEND + ruleid + "(" + self.cadr + ", m)" + self.end
-            if verify_ssp:
-                statestr += self.tab + "if !(" + self.unlock_ss + " = " + ccle_dot_state \
-                         + ") then" + self.nl
-                statestr += self.tab + self.tab + self._genBagAdd("m", self.lock_set)
-                statestr += self.end
-                statestr += self.tab + "endif" + self.end
             statestr += "endrule" + self.end + self.nl
 
         return [statestr, sendfctstr]
 
-    def _generateUnlockRules(self, arch, stable_states):
-        
-        rulesetstr = self._genAccessHeader(arch) + self.nl
+    def _generateUnlockRules(self, cache, parser):
+       
+        rulesetstr = self._genAccessHeader(cache)
         rulestr = ""
 
-        for state in stable_states:
-            ruleid = "Unlocking " + arch + "_" + state
+        for state in parser.getStableStates()[cache]:
+            ruleid = self.unlocking_tag + " " + cache + "_" + state
             rulestr += "rule \"" + ruleid + "\"" + self.nl
-            rulestr += self.tab + self.ccle + "." + self.iState + " = " + arch \
-                    + "_" + state
-            rulestr += " & !(" + self.ccle + "." + self.iState + " = " \
-                    + self.unlock_ss + ") & !(" + self._genBagCnt(\
-                    self.lock_set, "l", self.lock_set + "[l] = m") + " = 0)" 
-                    #TODO is it possible to not have "m" hardcoded here?
-            rulestr += self.nl
+            rulestr += self.tab + self.ccle + "." + self.iState + " = " + cache \
+                       + "_" + state
+            rulestr += " & !(" \
+                       + self._genBagCnt(
+                            self.lock_set + "_" + cache, "l",
+                            self.lock_set + "_" + cache + "[l] = " + self.cmach) \
+                       +  " = 0)" 
+
+            for dir in parser.getDir():
+                rulestr += self.nl + self.tab + "& ("
+                rulestr += "forall d:" + self.SetKey + dir + " do (" \
+                           + self.nl + self.tab + self.tab + self.tab
+                dir_states = []
+                for dir_stable_state in parser.getStableStates()[dir]:
+                    dir_states.append(self.instsuf \
+                              + dir + "[d]." + self.CLIdent + "[" \
+                              + self.cadr + "]" + "." + self.iState + " = " + dir + "_" \
+                               + dir_stable_state)
+                rulestr += ("\n" + self.tab + self.tab + self.tab + "| ").join(dir_states)
+                rulestr += ") endforall)\n"
+
             rulestr += "==>" + self.nl
-            rulestr += self.tab + self._genBagDel(self.lock_set, "l", "true") 
+            rulestr += self.tab \
+                       + self._genBagDel(
+                               self.lock_set + "_" + cache,
+                               "l",
+                               "true") 
             rulestr += self.end
             rulestr += "endrule" + self.end + self.nl
 
@@ -1458,14 +1483,14 @@ class Murphi:
 
         return rulesetstr
 
-
     def _genSendFunctionHeader(self, arch, ruleid, transition):
         fctstr = "procedure " + self.tSEND + ruleid + \
                     "(" + self.cadr + ":" + self.kaddress + "; m:" + self.SetKey + arch + ")" + self.end
         fctstr += "var " + self.defmsgname + ": " + self.rmessage + self.end
         fctstr += "begin" + self.nl
-        fctstr += self.tab + "alias " + self.ccle + ": " + self.instsuf + arch + "[m]." + \
-                    self.CLIdent + "[adr] do" + self.nl
+        fctstr += self.tab + "alias " + self.ccle + ": " + self.instsuf \
+                  + arch + "[" + self.cmach + "]." + self.CLIdent \
+                  + "[" + self.cadr +"] do" + self.nl
         fctstr += self._genTransition(arch, transition, transition.getguard(), 1)
         fctstr += "endalias" + self.end
         fctstr += "end" + self.end + self.nl
@@ -1544,7 +1569,7 @@ class Murphi:
 # GENERATE START STATES
 ########################################################################################################################
 
-    def _generateStartState(self, parser, verify_ssp):
+    def _generateStartState(self, parser):
         startstr = "startstate" + self.nl + self.nl
 
         startdef = self._genDirectoryInit(parser)
@@ -1554,13 +1579,6 @@ class Murphi:
         startdef += self._genFIFOInit()
         startdef += self._genNetworkInit()
 
-        # TODO the code below is quite hacky, is there a way to make it better?
-        if verify_ssp:
-            # any cache will do as they have identical startstates
-            cache = parser.getCacheSeq()[0] 
-            startdef += self.tab + self.unlock_ss + " := cache_" \
-                        + self.GlobalInit[cache]['State'] + self.end
-        
         startstr += self._addtabs(startdef, 1)
 
         startstr += self.nl + "endstartstate" + self.end
