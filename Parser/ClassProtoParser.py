@@ -13,6 +13,7 @@ from DataObjects.ClassStateNode import StateNode
 from DataObjects.ClassTransaction import Transaction
 from DataObjects.ClassMessage import Message
 
+
 class ProtoParser:
 
     # PARSER TOKENS ####################################################################################################

@@ -13,7 +13,8 @@ spacer = "\n\n\n"
 
 if len(sys.argv[1:]) == 0:
     file = "MSI_Proto.pcc"
-    file = "MESI_unordered.pcc"
+    #file = "MESI_unordered.pcc"
+    file = "John_MESI_unordered.pcc"
 else:
     assert len(sys.argv[1:]) == 1, "Too many arguments"
     file = sys.argv[1]
