@@ -1,12 +1,12 @@
 # ProtoGen
 
-*ProtoGen is still under development. This is an alpha release.*
+*ProtoGen is still under development. This is version is discontinued and replaced by HeteroGen https://github.com/Errare-humanum-est/HeteroGen*
 
 There is currently no type checking implemented for the ProtoCC language frontend, but it will be provided in the near future. Furthermore, multiple new features are in development, which will be published in the near future. 
 
 ProtoGen v0.5: Now supports SSP verification. The SSP is verified before ProtoGen generates the concurrent protocol.
 
-**A detailed description of the ProtoGen algorithm is provided here:** http://homepages.inf.ed.ac.uk/vnagaraj/papers/isca18a.pdf
+**A detailed description of the ProtoGen algorithm is provided here:** ISCA_ProtoGen.pdf - https://github.com/Errare-humanum-est/ProtoGen/blob/main/ISCA_ProtoGen.pdf
 
 If you have questions, you want to contribute or simply report any bugs, please contact: proto.gen at ed.ac.uk
 
