@@ -6,7 +6,7 @@ There is currently no type checking implemented for the ProtoCC language fronten
 
 ProtoGen v0.5: Now supports SSP verification. The SSP is verified before ProtoGen generates the concurrent protocol.
 
-**A detailed description of the ProtoGen algorithm is provided here:** ISCA_ProtoGen.pdf - https://github.com/Errare-humanum-est/ProtoGen/blob/main/ISCA_ProtoGen.pdf
+**A detailed description of the ProtoGen algorithm is provided here:** ISCA_ProtoGen.pdf - https://github.com/Errare-humanum-est/ProtoGen/blob/master/ISCA_ProtoGen.pdf
 
 If you have questions, you want to contribute or simply report any bugs, please contact: proto.gen at ed.ac.uk
 
